@@ -15,6 +15,7 @@
  *   html    … "1" なら body をHTMLとして送信（任意）
  *   kind    … 種別タグ（任意。例: 患者会アウトリーチ / 業務委託 / パートナー）
  *   dryrun  … "1" なら送信せず受け取った内容だけ返す（ログも残さない）
+ *   draft   … "1" なら送信せず Gmail 下書きを作成する（ログは「下書き作成」で記録）
  *
  * ※ URLパラメータは送信側でURLエンコードすること。
  */
@@ -165,6 +166,28 @@ function doGet(e) {
     return jsonOut({ ok: true, dryRun: true, from: from, to, subject, body, options, kind });
   }
 
+  // 下書き作成モード：送信せず Gmail 下書きに保存
+  if (p.draft === "1") {
+    try {
+      const draft = createDraft_(to, subject, body, options);
+      logRow_(to, subject, body, options.cc || "", from, "下書き作成", kind, "draftId=" + draft.getId());
+      return jsonOut({
+        ok: true,
+        draft: true,
+        draftId: draft.getId(),
+        from: from,
+        to,
+        subject,
+        logged: true,
+      });
+    } catch (err) {
+      try {
+        logRow_(to, subject, body, options.cc || "", from, "下書き失敗: " + String(err), kind, "");
+      } catch (logErr) {}
+      return jsonOut({ ok: false, error: String(err) });
+    }
+  }
+
   try {
     GmailApp.sendEmail(to, subject, body, options);
     logRow_(to, subject, body, options.cc || "", from, "送信成功", kind, "");
@@ -176,6 +199,15 @@ function doGet(e) {
     } catch (logErr) {}
     return jsonOut({ ok: false, error: String(err) });
   }
+}
+
+/**
+ * Gmail 下書きを作成する。
+ * options.cc / options.bcc / options.from / options.htmlBody に対応。
+ */
+function createDraft_(to, subject, body, options) {
+  const msg = GmailApp.createDraft(to, subject, body, options || {});
+  return msg;
 }
 
 // ===== ログ追記 =====
@@ -208,4 +240,40 @@ function jsonOut(obj) {
   return ContentService
     .createTextOutput(JSON.stringify(obj))
     .setMimeType(ContentService.MimeType.JSON);
+}
+
+/**
+ * 特定送信元メールをゴミ箱へ一括移動（完全削除はしない）。
+ * GAS エディタでこの関数を選択して実行する。
+ * 既定は dry-run。実際に移動する場合は DO_EXEC を true にして再実行。
+ *
+ * 対象クエリ: from:nikkeibp.co.jp OR from:media-radar.jp
+ */
+function trashFromSenders() {
+  const QUERY = 'from:nikkeibp.co.jp OR from:media-radar.jp';
+  const DOMAINS = ['nikkeibp.co.jp', 'media-radar.jp'];
+  const DO_EXEC = false; // true にするとゴミ箱へ移動
+
+  const threads = GmailApp.search(QUERY);
+  Logger.log('クエリ合計スレッド: ' + threads.length);
+
+  DOMAINS.forEach(function (domain) {
+    const n = GmailApp.search('from:' + domain).length;
+    Logger.log('from:' + domain + ' → ' + n + ' スレッド');
+  });
+
+  if (!DO_EXEC) {
+    Logger.log('dry-run: 移動していません。DO_EXEC=true にして再実行してください。');
+    return;
+  }
+
+  let moved = 0;
+  threads.forEach(function (t) {
+    t.moveToTrash();
+    moved++;
+  });
+  Logger.log('ゴミ箱へ移動: ' + moved + ' スレッド');
+
+  const inboxLeft = GmailApp.search('(' + QUERY + ') in:inbox');
+  Logger.log('受信トレイ残件: ' + inboxLeft.length);
 }

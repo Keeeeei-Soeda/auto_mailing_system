@@ -15,7 +15,7 @@ if (!EXEC_URL || !TOKEN) {
   process.exit(1);
 }
 
-// 引数パース: --to --subject --body --cc --bcc --html --dry-run
+// 引数パース: --to --subject --body --cc --bcc --html --dry-run --draft
 const args = {};
 for (let i = 2; i < process.argv.length; i++) {
   const a = process.argv[i];
@@ -37,6 +37,7 @@ if (cc) params.set('cc', cc);
 if (bcc) params.set('bcc', bcc);
 if (args.html) params.set('html', '1');
 if (args['dry-run'] || args.dryrun) params.set('dryrun', '1');
+if (args.draft) params.set('draft', '1');
 
 const url = `${EXEC_URL}?${params.toString()}`;
 const res = await fetch(url, { redirect: 'follow' });

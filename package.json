@@ -1,0 +1,23 @@
+{
+  "name": "auto_mailing_system",
+  "version": "1.0.0",
+  "description": "Cursor のチャットでメール文面を決め、`k.soeda@medi-canvas.com` 名義で送信する仕組みです。 送信のたびに、送信ログ用スプレッドシートへ自動で1行記録されます。",
+  "main": "index.js",
+  "directories": {
+    "doc": "docs"
+  },
+  "scripts": {
+    "test": "node test-zoom-mail.mjs && python3 -m unittest test_zoom_mail_payload.py -v",
+    "draft": "node create-zoom-mail.mjs",
+    "draft:dry-run": "node create-zoom-mail.mjs --dry-run",
+    "draft:test": "node create-zoom-mail.mjs --test"
+  },
+  "type": "module",
+  "bugs": {
+    "url": "https://github.com/Keeeeei-Soeda/auto_mailing_system/issues"
+  },
+  "homepage": "https://github.com/Keeeeei-Soeda/auto_mailing_system#readme",
+  "dependencies": {
+    "googleapis": "^173.0.0"
+  }
+}
