@@ -1,10 +1,10 @@
 /**
- * 汎用メール送信 GAS（Claude発火対応・ログ記録版）
- * web_fetch / curl から exec URL を叩くと、渡した宛先・件名・本文でそのまま送信し、
- * 送信のたびにログ用スプレッドシートへ1行追記する。
+ * 汎用メール送信 GAS（Claude発火対応・ログ記録版・添付対応）
+ * GET: 従来どおり URL パラメータで送信（添付なし）
+ * POST: JSON ボディで送信（Base64 添付対応）
  * 送信元は k.soeda@medi-canvas.com（母艦アカウントの send-as エイリアス）。
  *
- * パラメータ:
+ * 共通パラメータ:
  *   token   … 認証トークン（必須）
  *   to      … 宛先。カンマ区切りで複数可（必須）
  *   subject … 件名（必須）
@@ -13,11 +13,16 @@
  *   bcc     … BCC（任意・カンマ区切り可）
  *   from    … 差出人を個別に上書きしたい時のみ（任意・send-as登録済みのみ）
  *   html    … "1" なら body をHTMLとして送信（任意）
- *   kind    … 種別タグ（任意。例: 患者会アウトリーチ / 業務委託 / パートナー）
+ *   kind    … 種別タグ（任意）
  *   dryrun  … "1" なら送信せず受け取った内容だけ返す（ログも残さない）
- *   draft   … "1" なら送信せず Gmail 下書きを作成する（ログは「下書き作成」で記録）
+ *   mode     … "send"（既定）または "draft"（下書き作成）
+ *   draft    … "1" なら mode=draft と同じ（後方互換）
+ *   threadId … 指定時は既存スレッドへの返信（GmailApp.getThreadById）
  *
- * ※ URLパラメータは送信側でURLエンコードすること。
+ * POST 追加:
+ *   attachmentName     … 添付ファイル名（例: invoice.pdf）
+ *   attachmentMimeType … MIME（省略時 application/pdf）
+ *   attachmentBase64   … 添付の Base64 文字列
  */
 
 // ===== 設定 =====
@@ -32,7 +37,6 @@ const LOG_HEADERS = ["送信日時", "宛先", "件名", "本文", "CC", "差出
 /**
  * 権限承認用：GASエディタでこの関数を1回実行し、
  * 表示される権限ダイアログでスプレッドシート(Sheets)へのアクセスを許可する。
- * 成功するとログシートを開いてシート名がログに出力される。
  */
 function grantPermissions() {
   const ss = SpreadsheetApp.openById(LOG_SPREADSHEET_ID);
@@ -49,14 +53,12 @@ function grantPermissions() {
 }
 
 /**
- * 過去送信分の追記用：ログ記録版を導入する前に送ったメールを、後から送信ログへ記録する。
- * GASエディタでこの関数を1回だけ実行する（メール送信はしない／ログ追記のみ）。
- * 重複実行すると同じ行が二重に追記されるので注意。
+ * 過去送信分の追記用（重複実行注意）。
  */
 function backfillLogs() {
   const rows = [
     {
-      date: new Date(2026, 5, 25, 15, 24, 0), // 2026-06-25 15:24（岡本様宛 実送信）
+      date: new Date(2026, 5, 25, 15, 24, 0),
       to: "fmtu-bunara@ymail.ne.jp,jfsa@email.jp",
       subject: "ご面談のご依頼と新プロダクトのご説明",
       body: [
@@ -84,7 +86,7 @@ function backfillLogs() {
       ].join("\n"),
     },
     {
-      date: new Date(2026, 5, 25, 15, 46, 0), // 2026-06-25 15:46（久保田様宛 実送信）
+      date: new Date(2026, 5, 25, 15, 46, 0),
       to: "jfsa@email.jp,taeko-k@sea.plala.or.jp",
       subject: "先日のお礼と、7月中旬の北海道訪問のご相談",
       body: [
@@ -126,11 +128,11 @@ function backfillLogs() {
       r.to,
       r.subject,
       r.body,
-      "",                                // CC
-      DEFAULT_FROM,                      // 差出人
-      "送信成功",                         // ステータス
-      "患者会アウトリーチ",                // 種別
-      "ログ記録版導入前の送信を後から記録", // 備考
+      "",
+      DEFAULT_FROM,
+      "送信成功",
+      "患者会アウトリーチ",
+      "ログ記録版導入前の送信を後から記録",
     ]);
   });
 
@@ -139,12 +141,39 @@ function backfillLogs() {
 
 function doGet(e) {
   const p = (e && e.parameter) || {};
+  return handleMailRequest_(p, null);
+}
 
+/**
+ * 添付付き送信用。CLI からは JSON POST する。
+ */
+function doPost(e) {
+  let p = {};
+  try {
+    if (e && e.postData && e.postData.contents) {
+      p = JSON.parse(e.postData.contents);
+    }
+  } catch (err) {
+    return jsonOut({ ok: false, error: "invalid JSON: " + String(err) });
+  }
+  // URL クエリもマージ（token をクエリで渡す用途）
+  const q = (e && e.parameter) || {};
+  Object.keys(q).forEach(function (k) {
+    if (p[k] === undefined || p[k] === "") p[k] = q[k];
+  });
+  return handleMailRequest_(p, {
+    name: p.attachmentName || "",
+    mimeType: p.attachmentMimeType || "application/pdf",
+    base64: p.attachmentBase64 || "",
+  });
+}
+
+function handleMailRequest_(p, attachment) {
   if (p.token !== AUTH_TOKEN) {
     return jsonOut({ ok: false, error: "unauthorized" });
   }
 
-  const to = (p.to || "").trim();
+  const to = String(p.to || "").trim();
   const subject = p.subject || "";
   const body = p.body || "";
 
@@ -155,59 +184,120 @@ function doGet(e) {
   const options = {};
   const from = p.from || DEFAULT_FROM;
   if (from) options.from = from;
-  if (p.cc) options.cc = p.cc.trim();
-  if (p.bcc) options.bcc = p.bcc.trim();
-  if (p.html === "1") options.htmlBody = body;
+  if (p.cc) options.cc = String(p.cc).trim();
+  if (p.bcc) options.bcc = String(p.bcc).trim();
+  if (p.html === "1" || p.html === true) options.htmlBody = body;
 
   const kind = p.kind || "";
+  let mode = (p.mode || "send").toLowerCase();
+  if (p.draft === "1" || p.draft === true) mode = "draft";
+  const threadId = String(p.threadId || "").trim();
+  const hasAttachment = !!(attachment && attachment.base64);
 
-  // 動作確認モード：送信もログ記録もしない
-  if (p.dryrun === "1") {
-    return jsonOut({ ok: true, dryRun: true, from: from, to, subject, body, options, kind });
-  }
-
-  // 下書き作成モード：送信せず Gmail 下書きに保存
-  if (p.draft === "1") {
+  if (hasAttachment) {
     try {
-      const draft = createDraft_(to, subject, body, options);
-      logRow_(to, subject, body, options.cc || "", from, "下書き作成", kind, "draftId=" + draft.getId());
-      return jsonOut({
-        ok: true,
-        draft: true,
-        draftId: draft.getId(),
-        from: from,
-        to,
-        subject,
-        logged: true,
-      });
+      const bytes = Utilities.base64Decode(attachment.base64);
+      const blob = Utilities.newBlob(
+        bytes,
+        attachment.mimeType || "application/pdf",
+        attachment.name || "attachment.pdf"
+      );
+      options.attachments = [blob];
     } catch (err) {
-      try {
-        logRow_(to, subject, body, options.cc || "", from, "下書き失敗: " + String(err), kind, "");
-      } catch (logErr) {}
-      return jsonOut({ ok: false, error: String(err) });
+      return jsonOut({ ok: false, error: "attachment decode failed: " + String(err) });
     }
   }
 
+  // 動作確認モード：送信もログ記録もしない
+  if (p.dryrun === "1" || p.dryrun === true) {
+    return jsonOut({
+      ok: true,
+      dryRun: true,
+      from: from,
+      to: to,
+      subject: subject,
+      body: body,
+      mode: mode,
+      threadId: threadId || null,
+      hasAttachment: hasAttachment,
+      attachmentName: hasAttachment ? attachment.name : null,
+      kind: kind,
+    });
+  }
+
+  let note = hasAttachment ? "添付: " + (attachment.name || "(unnamed)") : "";
+  if (threadId) {
+    note = (note ? note + " / " : "") + "threadId: " + threadId;
+  }
+
   try {
+    if (threadId) {
+      const thread = GmailApp.getThreadById(threadId);
+      if (!thread) {
+        return jsonOut({ ok: false, error: "thread not found: " + threadId });
+      }
+      if (mode === "draft") {
+        // createDraftReply は options 非対応のため本文のみ
+        thread.createDraftReply(body);
+        logRow_(to, subject, body, options.cc || "", from, "下書き作成(返信)", kind, note);
+        return jsonOut({
+          ok: true,
+          draft: true,
+          reply: true,
+          from: from,
+          to: to,
+          subject: subject,
+          threadId: threadId,
+          hasAttachment: hasAttachment,
+          logged: true,
+        });
+      }
+      thread.reply(body, options);
+      logRow_(to, subject, body, options.cc || "", from, "送信成功(返信)", kind, note);
+      return jsonOut({
+        ok: true,
+        sent: true,
+        reply: true,
+        from: from,
+        to: to,
+        subject: subject,
+        threadId: threadId,
+        hasAttachment: hasAttachment,
+        logged: true,
+      });
+    }
+
+    if (mode === "draft") {
+      GmailApp.createDraft(to, subject, body, options);
+      logRow_(to, subject, body, options.cc || "", from, "下書き作成", kind, note);
+      return jsonOut({
+        ok: true,
+        draft: true,
+        from: from,
+        to: to,
+        subject: subject,
+        hasAttachment: hasAttachment,
+        logged: true,
+      });
+    }
+
     GmailApp.sendEmail(to, subject, body, options);
-    logRow_(to, subject, body, options.cc || "", from, "送信成功", kind, "");
-    return jsonOut({ ok: true, sent: true, from: from, to, subject, logged: true });
+    logRow_(to, subject, body, options.cc || "", from, "送信成功", kind, note);
+    return jsonOut({
+      ok: true,
+      sent: true,
+      from: from,
+      to: to,
+      subject: subject,
+      hasAttachment: hasAttachment,
+      logged: true,
+    });
   } catch (err) {
-    // 送信失敗もログに残す（記録自体が失敗しても本処理のエラーを優先）
     try {
-      logRow_(to, subject, body, options.cc || "", from, "送信失敗: " + String(err), kind, "");
+      logRow_(to, subject, body, options.cc || "", from, "失敗: " + String(err), kind, note);
     } catch (logErr) {}
     return jsonOut({ ok: false, error: String(err) });
   }
-}
-
-/**
- * Gmail 下書きを作成する。
- * options.cc / options.bcc / options.from / options.htmlBody に対応。
- */
-function createDraft_(to, subject, body, options) {
-  const msg = GmailApp.createDraft(to, subject, body, options || {});
-  return msg;
 }
 
 // ===== ログ追記 =====
@@ -217,7 +307,6 @@ function logRow_(to, subject, body, cc, from, status, kind, note) {
   if (!sheet) {
     sheet = ss.insertSheet(LOG_SHEET_NAME);
   }
-  // ヘッダー未設定なら初回だけ作成
   if (sheet.getLastRow() === 0) {
     sheet.appendRow(LOG_HEADERS);
     sheet.getRange(1, 1, 1, LOG_HEADERS.length).setFontWeight("bold");
@@ -241,6 +330,7 @@ function jsonOut(obj) {
     .createTextOutput(JSON.stringify(obj))
     .setMimeType(ContentService.MimeType.JSON);
 }
+
 
 /**
  * 特定送信元メールをゴミ箱へ一括移動（完全削除はしない）。

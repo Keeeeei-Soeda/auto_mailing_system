@@ -9,17 +9,18 @@ Cursorのチャットでメール文面を決めて、`k.soeda@medi-canvas.com` 
 
 ```
 Cursor (チャットで文面決定)
-        │  node send-mail.mjs --to ... --subject ... --body ...
+        │  python3 send-mail.py --to ... [--attach] [--thread-id] ...
         ▼
-send-mail.mjs  ──GETリクエスト（token/to/subject/body...）──▶  GAS Webアプリ (send_mail.gs)
-        ▲                                                              │
-        │                                                       GmailApp.sendEmail
-     .env                                                              ▼
- (URL・トークン)                                      k.soeda@medi-canvas.com 名義で送信
+send-mail.py  ──GET / POST（JSON）──▶  GAS Webアプリ (send_mail.gs)
+        ▲                                      │
+        │                         sendEmail / reply / createDraft
+     .env                                      ▼
+ (URL・トークン)                k.soeda@medi-canvas.com 名義で送信・ログ追記
 ```
 
 - **送信元**: `k.soeda@medi-canvas.com` 固定（GAS側 `DEFAULT_FROM`、send-as エイリアス）
 - **認証**: `.env` の `GAS_TOKEN` と GAS側 `AUTH_TOKEN` の一致でチェック
+- **拡張**: POST で添付（Base64）、`threadId` で既存スレッド返信、`mode=draft` で下書き
 
 ---
 
@@ -27,11 +28,14 @@ send-mail.mjs  ──GETリクエスト（token/to/subject/body...）──▶  
 
 | ファイル | 役割 | Git管理 |
 |---|---|---|
-| `send-mail.mjs` | メール送信用CLIスクリプト（Node.js、依存なし） | する |
+| `send-mail.py` | メール送信用CLI（Python・添付/スレッド対応） | する |
+| `send-mail.mjs` | メール送信用CLI（Node.js） | する |
 | `.env` | `GAS_EXEC_URL` と `GAS_TOKEN` を保持 | **しない（.gitignore）** |
-| `.gitignore` | `.env`・`node_modules/` を除外 | する |
+| `.gitignore` | `.env`・認証ファイル等を除外 | する |
 | `send_mail.gs` | GAS側Webアプリ本体（参照用） | する |
-| `cursor_mail_setup.md` | 元の手順書 | する |
+| `attachments/` | 送信用添付（請求書など） | する |
+| `docs/instructions/` | Cursor指示書 | する |
+| `docs/cursor_mail_setup.md` | 元の手順書 | する |
 
 ### `.env` の形式
 

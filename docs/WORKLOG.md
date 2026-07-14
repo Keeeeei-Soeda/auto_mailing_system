@@ -5,6 +5,86 @@
 
 ---
 
+## 2026-07-14〜15
+
+### この日のゴール
+
+1. 添付付きメール（請求書）・CC 付き・スレッド返信を実運用できるようにする
+2. Cursor 指示書に基づき複数件の本番送信を完了する
+3. 指示書・請求書・作業記録を整理して GitHub へ反映する
+
+### アップデートポイント（システム）
+
+| 項目 | 内容 |
+|---|---|
+| **添付対応** | `send_mail.gs` に `doPost` を追加。Base64 PDF を受け取り `GmailApp` の `attachments` で送信 |
+| **スレッド返信** | `threadId` 指定時は `GmailApp.getThreadById(...).reply(...)`（応答に `reply:true`） |
+| **下書きモード** | `mode=draft` で下書き作成（スレッド時は `createDraftReply`） |
+| **Python CLI** | `send-mail.py` を追加（`--attach` / `--thread-id` / `--cc` / `--dry-run`）。Node 未導入環境でも送信可能 |
+| **Node CLI** | `send-mail.mjs` も `--attach` / `--mode` 対応 |
+| **GAS 再デプロイ** | 添付版・スレッド返信版を新バージョンでデプロイ。exec URL は `.env` の `GAS_EXEC_URL` を更新（Git 管理外） |
+| **下書き互換** | 既存の `draft=1` / `--draft` も継続利用可（`mode=draft` と同義） |
+| **関連ツール** | Zoom 下書き補助（`create_zoom_mail.*`）、送信元一括ゴミ箱（`trash_from_senders.*` / GAS `trashFromSenders`）も同一リポジトリに共存 |
+
+補足: Gmail API 直叩きの試作（`docs/archive/create_gmail_draft.py`）は残置のみ。本番経路は GAS 経由に統一。
+
+### 本番送信サマリ
+
+運用はいずれも「`pharnewton@gmail.com` へテスト → 確認後に本番」。
+
+#### 1. 請求書送付（西森さん／MKM）
+
+| 項目 | 内容 |
+|---|---|
+| To | `kozo.nishimori@mkmjapan.jp` |
+| 件名 | 【メディキャンバス】ALS患者インタビュー調査 ご請求書送付の件 |
+| 添付 | `attachments/請求書_メディカルナレッジマネジメント_20260714.pdf` |
+| 備考 | 指示書どおりの文面。振込手数料は貴社負担の一文あり。インボイス番号には言及しない |
+
+#### 2. 面談お礼（難病のこども支援全国ネットワーク）
+
+| 項目 | 内容 |
+|---|---|
+| To | `shimomura@nanbyonet.or.jp` |
+| CC | `fukushima@nanbyonet.or.jp` / `honda@nanbyonet.or.jp` / `tachibana@nanbyonet.or.jp` |
+| 件名 | 昨日のお礼、メディキャンバス副田 |
+| 修正 | 宛名を「下村 美紀様」→「皆様」。文中の「本日は」を削除 |
+
+#### 3. Zoom URL 共有（日本アラジール症候群の会）
+
+| 項目 | 内容 |
+|---|---|
+| To | `alagille@alagille.jp`（吉田様） |
+| CC | `y.mori@medi-canvas.com`（森さん） |
+| 件名 | 明日のZoom URLのご共有（日本アラジール症候群の会） |
+| 内容 | 7/15 10:30〜 の Zoom URL・ミーティングID・パスコード |
+
+#### 4. スレッド返信（玉木さん）
+
+| 項目 | 内容 |
+|---|---|
+| To | `tamauzura99@gmail.com` |
+| CC | `pharnewton@gmail.com` |
+| 件名 | Re: 玉木です。 |
+| threadId | `19f605da3923d395`（既存スレッドへの返信・`reply:true` を確認） |
+| 内容 | 8/9 番組打ち合わせ候補（7/22 13–15時・7/23 13–18時）、肩書・番組タイトルの確認、モニターPRへのお礼 |
+
+### ファイル整理
+
+| 配置 | 内容 |
+|---|---|
+| `docs/instructions/` | Cursor 指示書（上記4件） |
+| `attachments/` | 送信用添付（請求書 PDF） |
+| `docs/archive/` | 未採用の Gmail API 試作 |
+
+### 申し送り
+
+- GAS を変更したら **必ず新バージョンで再デプロイ**し、変わった場合は `.env` の `GAS_EXEC_URL` を更新する。
+- スレッド返信は `--thread-id` 必須。Message-ID と threadId を混同しないこと。
+- 請求書・銀行情報を含む PDF は機微情報。リポジトリの公開設定に注意。
+
+---
+
 ## 2026-06-25
 
 ### この日のゴール

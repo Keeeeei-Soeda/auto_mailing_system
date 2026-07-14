@@ -1,4 +1,5 @@
 import { readFileSync } from 'node:fs';
+import { basename } from 'node:path';
 
 // .env を読む（依存なしの簡易ローダー）
 try {
@@ -15,7 +16,7 @@ if (!EXEC_URL || !TOKEN) {
   process.exit(1);
 }
 
-// 引数パース: --to --subject --body --cc --bcc --html --dry-run --draft
+// 引数: --to --subject --body --cc --bcc --html --dry-run --draft --attach --mode --thread-id
 const args = {};
 for (let i = 2; i < process.argv.length; i++) {
   const a = process.argv[i];
@@ -29,18 +30,64 @@ for (let i = 2; i < process.argv.length; i++) {
 const { to, subject, body, cc, bcc } = args;
 if (!to || !subject || !body) {
   console.error('必須引数: --to --subject --body');
+  console.error('任意: --cc --bcc --html --dry-run --draft --attach <path> --mode send|draft --thread-id <id>');
   process.exit(1);
 }
 
-const params = new URLSearchParams({ token: TOKEN, to, subject, body });
-if (cc) params.set('cc', cc);
-if (bcc) params.set('bcc', bcc);
-if (args.html) params.set('html', '1');
-if (args['dry-run'] || args.dryrun) params.set('dryrun', '1');
-if (args.draft) params.set('draft', '1');
+const dryrun = !!(args['dry-run'] || args.dryrun);
+const mode = args.draft ? 'draft' : (args.mode || 'send');
+const attachPath = args.attach || args.attachment;
+const threadId = args['thread-id'] || args.threadId;
 
-const url = `${EXEC_URL}?${params.toString()}`;
-const res = await fetch(url, { redirect: 'follow' });
-const text = await res.text();
-console.log(`HTTP ${res.status}`);
-console.log(text);
+async function sendGet() {
+  const params = new URLSearchParams({ token: TOKEN, to, subject, body, mode });
+  if (cc) params.set('cc', cc);
+  if (bcc) params.set('bcc', bcc);
+  if (args.html) params.set('html', '1');
+  if (dryrun) params.set('dryrun', '1');
+  if (args.draft) params.set('draft', '1');
+  if (threadId) params.set('threadId', threadId);
+  const url = `${EXEC_URL}?${params.toString()}`;
+  const res = await fetch(url, { redirect: 'follow' });
+  const text = await res.text();
+  console.log(`HTTP ${res.status}`);
+  console.log(text);
+}
+
+async function sendPost() {
+  const payload = {
+    token: TOKEN,
+    to,
+    subject,
+    body,
+    mode,
+  };
+  if (cc) payload.cc = cc;
+  if (bcc) payload.bcc = bcc;
+  if (args.html) payload.html = '1';
+  if (dryrun) payload.dryrun = '1';
+  if (args.draft) payload.draft = '1';
+  if (threadId) payload.threadId = threadId;
+  if (attachPath) {
+    const fileBytes = readFileSync(attachPath);
+    payload.attachmentName = basename(attachPath);
+    payload.attachmentMimeType = 'application/pdf';
+    payload.attachmentBase64 = fileBytes.toString('base64');
+  }
+
+  const res = await fetch(EXEC_URL, {
+    method: 'POST',
+    redirect: 'follow',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  });
+  const text = await res.text();
+  console.log(`HTTP ${res.status}`);
+  console.log(text);
+}
+
+if (attachPath || threadId) {
+  await sendPost();
+} else {
+  await sendGet();
+}

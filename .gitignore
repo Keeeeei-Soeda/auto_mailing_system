@@ -1,7 +1,10 @@
 .env
 node_modules/
 credentials/
+credentials.json
+token.json
 tmp_*.txt
 __pycache__/
 *.pyc
 .playwright-mcp/
+.DS_Store

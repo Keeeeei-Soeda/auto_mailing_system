@@ -9,18 +9,25 @@
 
 ## 0. 送信の仕組み（前提）
 
-- 送信は `send-mail.mjs` を使い、GAS Webアプリ経由で送信する（詳細は `SETUP.md`）。
+- 送信は主に `send-mail.py`（または `send-mail.mjs`）を使い、GAS Webアプリ経由で送信する（詳細は `SETUP.md`）。
 - 送信元は常に `k.soeda@medi-canvas.com` 固定。
 - 認証情報は `.env`（`GAS_EXEC_URL` / `GAS_TOKEN`）。`.env` は絶対にコミットしない。
+- 添付は `--attach`、既存スレッド返信は `--thread-id`。
 
 ### コマンド形式
 
 ```bash
 # テスト・確認用（テストアドレスへ実際に送る）
-node send-mail.mjs --to "pharnewton@gmail.com" --subject "件名" --body "本文..."
+python3 send-mail.py --to "pharnewton@gmail.com" --subject "件名" --body "本文..."
 
-# 本送信（本番宛先へ）
-node send-mail.mjs --to "宛先1,宛先2" --subject "件名" --body "本文..."
+# 本送信（添付・CC・スレッド返信の例）
+python3 send-mail.py \
+  --to "宛先" \
+  --cc "cc@example.com" \
+  --subject "件名" \
+  --body "本文..." \
+  --attach "attachments/xxx.pdf" \
+  --thread-id "（必要なときのみ）"
 ```
 
 ---
@@ -121,5 +128,7 @@ node send-mail.mjs --to "宛先1,宛先2" --subject "件名" --body "本文..."
 - [ ] 署名（会社名・氏名）は空行なしで連続しているか
 - [ ] 件名はユーザー指定どおりか
 - [ ] まずテストアドレス（`pharnewton@gmail.com`）へ送ったか
-- [ ] 本番宛先のスペル・ドメインは正しいか
+- [ ] 本番宛先のスペル・ドメインは正しいか（To / CC の両方）
+- [ ] 添付がある場合、ファイル名・内容は正しいか
+- [ ] スレッド返信の場合、`--thread-id` を指定したか
 - [ ] ユーザーの「送って／OK」を得てから本送信したか
